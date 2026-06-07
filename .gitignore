@@ -1,0 +1,4 @@
+node_modules/
+z-tenant-flight/target/
+.DS_Store
+*.log
