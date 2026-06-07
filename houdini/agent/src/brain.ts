@@ -31,10 +31,13 @@ export function brainAvailable(): boolean {
  */
 export async function planAction(instruction: string, nonce: number): Promise<ProposedAction> {
   if (!brainAvailable()) throw new Error("OPENAI_API_KEY not set — add it to .env to enable the LLM brain");
+
   const client = new OpenAI();
   const res = await client.chat.completions.create({
     model: MODEL,
     response_format: { type: "json_object" },
+    max_tokens: 80,    // a single small JSON action — keeps the real call fast on camera
+    temperature: 0,    // deterministic so the recorded run is reproducible
     messages: [
       { role: "system", content: SYSTEM },
       { role: "user", content: `Suggested nonce: ${nonce}.\nInstruction: ${instruction}` },
