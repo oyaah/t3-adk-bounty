@@ -1,25 +1,25 @@
 /// Houdini contract WIT world.
 ///
-/// Production build additionally imports the real Terminal 3 host interfaces for
-/// ledger persistence and audit logging (verified names/versions, see
-/// ../../FIXED-ONBOARDING.md):
-///
-///     import host:tenant/tenant-context@1.0.0;
-///     import host:interfaces/logging@2.1.0;
-///     import host:interfaces/kv-store@2.1.0;
-///
-/// The offline demo component is self-contained — the host passes current
-/// ledger state in the call payload — so it compiles deterministically without
-/// the host packages present (KTD-2: local enclave-faithful harness).
+/// The ledger is ENCLAVE-OWNED: cumulative spend and the replay nonce watermark
+/// persist in the real Terminal 3 `host:interfaces/kv-store@2.1.0` map
+/// `z:<tid>:houdini:<mandate_id>`. The caller's request payload carries NO
+/// ledger state, so the agent cannot reset `spent` or clear the nonce
+/// watermark. The wit dep is vendored under `wit/deps/` (copied from the
+/// verified host-interfaces package) so the wasm component links the real
+/// import name/version.
 package houdini:contract@0.1.0;
 
 world contract {
+    import host:interfaces/kv-store@2.1.0;
     export contracts;
 }
 
 interface contracts {
     /// Standard Terminal 3 3-field envelope (mirrors the z-tenant-flight sample).
-    /// `input` is the JSON-serialized EvalPayload; the other two are unused here.
+    /// `input`        — JSON-serialized EvalPayload (NO ledger state; enclave-owned).
+    /// `user-profile` — raw PII, usable inside the enclave only; the result type
+    ///                  has no field to carry it back out (structural guarantee).
+    /// `context`      — unused here.
     record generic-input {
         input:        option<list<u8>>,
         user-profile: option<list<u8>>,
@@ -27,8 +27,8 @@ interface contracts {
     }
 
     /// A legitimate action the agent proposes under its mandate.
-    /// Input  (JSON): EvalPayload { signed, request, prior_spent, used_nonces, now_unix }
-    /// Output (JSON): EvalResult  { allowed, reason, spent }
+    /// Input  (JSON): EvalPayload { signed, request, now_unix }
+    /// Output (JSON): EvalResult  { allowed, reason, spent }  — carries no PII.
     act: func(req: generic-input) -> result<list<u8>, string>;
 
     /// An escape attempt from the self-attack swarm. Routed through the SAME

@@ -15,14 +15,14 @@ export interface ActionRequest {
   action: string;
   amount: number;
   nonce: number;
-  returns_pii?: boolean;
 }
 
+// NOTE: no ledger state here. `spent` and the replay nonce watermark are owned
+// by the enclave (file-backed store on host, kv-store in wasm) and keyed by
+// mandate_id — the agent cannot reset them by editing the payload.
 export interface EvalPayload {
   signed: SignedMandate;
   request: ActionRequest;
-  prior_spent?: number;
-  used_nonces?: number[];
   now_unix: number;
 }
 
@@ -37,15 +37,20 @@ export function evalBinPath(): string {
   return resolve(__dir, "../../contract/target/release/eval");
 }
 
-/** Send a payload through the genuine contract guard. Throws if the bin is absent. */
-export function callContract(payload: EvalPayload): EvalResult {
+/**
+ * Send a payload through the genuine contract guard. Throws if the bin is absent.
+ * `stateDir` points the enclave-owned ledger store at a directory; pass a fresh
+ * one to start a clean scenario. State is NEVER taken from the payload.
+ */
+export function callContract(payload: EvalPayload, stateDir?: string): EvalResult {
   const bin = evalBinPath();
   if (!existsSync(bin)) {
     throw new Error(
       `contract eval binary not found at ${bin} — run: cargo build --release --manifest-path houdini/contract/Cargo.toml`,
     );
   }
-  const out = spawnSync(bin, { input: JSON.stringify(payload), encoding: "utf8" });
+  const env = stateDir ? { ...process.env, HOUDINI_STATE_DIR: stateDir } : process.env;
+  const out = spawnSync(bin, { input: JSON.stringify(payload), encoding: "utf8", env });
   if (out.status !== 0) {
     throw new Error(`eval failed: ${out.stderr || out.stdout}`);
   }

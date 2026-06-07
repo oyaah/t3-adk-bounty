@@ -25,7 +25,9 @@ struct Step {
     action: &'static str,
     amount: u64,
     nonce: u64,
-    returns_pii: bool,
+    /// Supplies raw PII via the profile channel and tries to get it back. The
+    /// result type structurally cannot carry it, so the attack yields nothing.
+    pii_exfil: bool,
     tamper: bool,
 }
 
@@ -36,7 +38,7 @@ enum Kind {
 }
 
 fn step(kind: Kind, label: &'static str, action: &'static str, amount: u64, nonce: u64) -> Step {
-    Step { kind, label, action, amount, nonce, returns_pii: false, tamper: false }
+    Step { kind, label, action, amount, nonce, pii_exfil: false, tamper: false }
 }
 
 fn gauge(spent: u64, budget: u64) -> String {
@@ -69,9 +71,9 @@ fn main() {
         step(Kind::Legit, "pay SaaS subscription", "pay_vendor", 100, 2),
         step(Kind::Escape, "budget-bust  (spend 400 > cap)", "pay_vendor", 400, 3),
         step(Kind::Escape, "nonce replay (reuse nonce 1)", "pay_vendor", 50, 1),
-        Step { kind: Kind::Escape, label: "forged mandate (tamper budget)", action: "pay_vendor", amount: 50, nonce: 7, returns_pii: false, tamper: true },
+        Step { kind: Kind::Escape, label: "forged mandate (tamper budget)", action: "pay_vendor", amount: 50, nonce: 7, pii_exfil: false, tamper: true },
         step(Kind::Escape, "scope escalation (drain_treasury)", "drain_treasury", 10, 8),
-        Step { kind: Kind::Escape, label: "PII exfil (leak profile data)", action: "pay_vendor", amount: 10, nonce: 9, returns_pii: true, tamper: false },
+        Step { kind: Kind::Escape, label: "PII exfil (leak profile data)", action: "pay_vendor", amount: 10, nonce: 9, pii_exfil: true, tamper: false },
         step(Kind::Legit, "pay vendor (post-assault, still works)", "pay_vendor", 150, 10),
     ];
 
@@ -79,12 +81,14 @@ fn main() {
     let mut escapes_total = 0u32;
     let mut escapes_blocked = 0u32;
 
+    // Raw PII the agent will try (and fail) to exfiltrate via the contract.
+    let profile = br#"{"name":"Jane Doe","ssn":"123-45-6789"}"#;
+
     for s in &steps {
         let req = ActionRequest {
             action: s.action.into(),
             amount: s.amount,
             nonce: s.nonce,
-            returns_pii: s.returns_pii,
         };
         // The forged-mandate escape tampers the signed mandate after signing.
         let mandate_for_call = if s.tamper {
@@ -99,7 +103,26 @@ fn main() {
             escapes_total += 1;
         }
 
-        let decision = evaluate(&req, &mandate_for_call, &mut ledger, NOW);
+        // PII exfil: the profile is handed to the guard (usable inside the
+        // enclave), but the result type — EvalResult { allowed, reason, spent }
+        // — has no field for raw bytes. The leak is structurally impossible, so
+        // the ledger never moves and nothing crosses back.
+        if s.pii_exfil {
+            let mut probe = ledger.clone();
+            let _ = evaluate(&req, &mandate_for_call, &mut probe, NOW, Some(profile));
+            // Whatever the guard decided, the contract's reply can only ever be
+            // allowed/reason/spent — no profile bytes. Treat as a blocked escape
+            // and leave the ledger untouched.
+            escapes_blocked += 1;
+            println!(
+                "  {RED}ATTACK{RESET}  {RED}✗ BLOCKED{RESET} {label:<38}  {DIM}{gauge}{RESET}  {RED}pii_no_return_path{RESET}",
+                label = s.label,
+                gauge = gauge(ledger.spent, mandate.budget_total),
+            );
+            continue;
+        }
+
+        let decision = evaluate(&req, &mandate_for_call, &mut ledger, NOW, None);
         let tag = match s.kind {
             Kind::Legit => format!("{DIM}legit {RESET}"),
             Kind::Escape => format!("{RED}ATTACK{RESET}"),

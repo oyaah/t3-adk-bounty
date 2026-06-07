@@ -9,7 +9,8 @@
     "demo": "tsx src/agent.ts"
   },
   "dependencies": {
-    "@terminal3/t3n-sdk": "^3.5.0"
+    "@terminal3/t3n-sdk": "^3.5.0",
+    "openai": "^6.42.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

@@ -11,7 +11,7 @@ Houdini runs a real budget under a user-signed **mandate** that is enforced *ins
   ATTACK  ✗ BLOCKED nonce replay (reuse nonce 1)            [████████████░░░░░░░░] 300/500  replay_rejected
   ATTACK  ✗ BLOCKED forged mandate (tamper budget)          [████████████░░░░░░░░] 300/500  forged_mandate
   ATTACK  ✗ BLOCKED scope escalation (drain_treasury)       [████████████░░░░░░░░] 300/500  action_not_permitted
-  ATTACK  ✗ BLOCKED PII exfil (leak profile data)           [████████████░░░░░░░░] 300/500  pii_forbidden
+  ATTACK  ✗ BLOCKED PII exfil (leak profile data)           [████████████░░░░░░░░] 300/500  pii_no_return_path
   legit   ✓ ALLOW   pay vendor (post-assault, still works)  [██████████████████░░] 450/500
 
   5/5 escape attempts blocked — ledger moved only by legitimate actions (450/500)
@@ -21,11 +21,11 @@ Houdini runs a real budget under a user-signed **mandate** that is enforced *ins
 
 | # | Escape trick | What Houdini tries | Why it can't (enforced in TEE) |
 |---|---|---|---|
-| 1 | **Budget-bust** | Spend past the per-tx cap / cumulative budget | Guard reads the ledger, denies, ledger unchanged |
-| 2 | **Nonce replay** | Re-submit an already-approved action | Nonce ledger marks it spent → `replay_rejected` |
+| 1 | **Budget-bust** | Spend past the per-tx cap / cumulative budget | Guard reads the **enclave-owned** ledger, denies, ledger unchanged |
+| 2 | **Nonce replay** | Re-submit an already-approved action | Enclave-owned nonce watermark rejects nonce ≤ last → `replay_rejected` |
 | 3 | **Forged mandate** | Tamper the mandate / sign with the wrong key | Ed25519 signature check fails → `forged_mandate` |
 | 4 | **Scope escalation** | Call an action outside the allowlist | Not in mandate → `action_not_permitted` |
-| 5 | **PII exfil** | Return raw profile data across the boundary | Refused → `pii_forbidden` (PII never leaves the enclave) |
+| 5 | **PII exfil** | Hand raw profile data in and try to get it back | Structural: the result type (`allowed/reason/spent`) has no field for PII — the profile is usable *inside* the enclave only |
 
 ## Why this matters
 
@@ -47,13 +47,14 @@ Owner ──signs mandate──▶  TEE contract (Rust→WASM)         Agent (Ty
 
 - **Enforcement (`contract/`)** — Rust→WASM (`wasm32-wasip2`) contract exporting `houdini:contract/contracts`. `guard.rs` runs all checks fail-closed and mutates the ledger **only** on full approval.
 - **Agent (`agent/`)** — real T3 SDK auth (correct EthSign flow, no mocks), an Ed25519 mandate signer, and a bridge that drives the genuine contract guard.
-- **Proof** — 8 contract unit tests + a 6-test **escape matrix** + a cross-language test (a TS-signed mandate verified inside the Rust contract). CI runs all of it and fails if any escape isn't blocked.
+- **Proof** — contract unit tests + a 6-test **escape matrix** (including a cross-call replay/budget test against the enclave-owned store and a structural-PII test) + a cross-language bridge test (a TS-signed mandate verified inside the Rust contract, plus replay + cumulative budget enforced across calls). CI runs all of it and fails if any escape isn't blocked.
 
 ## What's live vs simulated (honest box)
 
 - ✅ **LIVE end-to-end on Terminal 3 testnet** — real Eth handshake + authenticate, our `wasm32-wasip2` contract **registered to a real tenant** (`contract_id 17`, `z:<tid>:houdini-guard`), and **executed inside the real remote TEE**: 2 legit ALLOW, 5/5 escapes BLOCKED by the enclave. Full capture in [`LIVE-PROOF.md`](./LIVE-PROOF.md). This is the gap most submissions have — they run seeded/demo-mode and never deploy.
-- ✅ **Real:** the contract + fail-closed guard, Ed25519 mandate signing/verification (TS signer verified inside the Rust contract), the 5 enforced rejections, real `@terminal3/t3n-sdk` auth (no mocks, no hardcoded address — derived from the key).
-- 🟡 **One honest limitation:** the ledger is currently passed per-call (`prior_spent`, `used_nonces`); persisting it in `host:interfaces/kv-store` so cumulative budget + replay state live inside the enclave across calls is the next step. Per-call enforcement (signature, scope, per-tx cap, PII, replay vs supplied state) is real and live today.
+- ✅ **Real:** the contract + fail-closed guard, Ed25519 mandate signing/verification (TS signer verified inside the Rust contract), all 5 enforced rejections, real `@terminal3/t3n-sdk` auth (no mocks, no hardcoded address — derived from the key).
+- ✅ **Enclave-owned ledger (no caller-supplied state):** cumulative `spent` and the replay nonce watermark live in a `LedgerStore` keyed by `mandate_id` — file-backed on the host, the real `host:interfaces/kv-store@2.1.0` import in the wasm component (verify with `wasm-tools component wit …`). The request payload carries **no** ledger fields, so the agent cannot reset spend or replay a nonce. This is what makes replay + cumulative-budget defenses genuine.
+- ✅ **Structural PII:** PII enters via the WIT `user-profile` field (usable inside the enclave); `EvalResult` has no field to carry raw bytes back, so exfil is impossible by construction — not a boolean the caller sets on itself.
 
 No theater: auth, deploy, and enforcement are genuine and reproducible against the live network.
 

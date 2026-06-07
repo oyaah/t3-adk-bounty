@@ -7,17 +7,16 @@ use crate::ledger::Ledger;
 use crate::mandate::SignedMandate;
 use serde::{Deserialize, Serialize};
 
-/// What the agent wants to do. `returns_pii` models an action that would carry
-/// the user's raw profile data back across the WIT boundary — which the contract
-/// forbids (PII is resolved host-side via placeholders and must never leave the
-/// enclave in cleartext).
+/// What the agent wants to do. Note what is ABSENT: there is no field by which
+/// the agent can mark a request as "return my raw profile" or smuggle PII out.
+/// PII enters the enclave only via the WIT `user-profile` envelope field, is
+/// usable inside the guard, and `EvalResult` is structurally incapable of
+/// carrying it back (see `Decision` / `EvalResult`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActionRequest {
     pub action: String,
     pub amount: u64,
     pub nonce: u64,
-    #[serde(default)]
-    pub returns_pii: bool,
 }
 
 /// Why an action was refused. Strings mirror T3 host-style error vocabulary.
@@ -27,7 +26,6 @@ pub enum BlockedReason {
     ForgedMandate,
     Expired,
     ActionNotPermitted,
-    PiiForbidden,
     ReplayRejected,
     OverPerTxCap,
     OverBudget,
@@ -39,7 +37,6 @@ impl BlockedReason {
             BlockedReason::ForgedMandate => "forged_mandate",
             BlockedReason::Expired => "mandate_expired",
             BlockedReason::ActionNotPermitted => "action_not_permitted",
-            BlockedReason::PiiForbidden => "pii_forbidden",
             BlockedReason::ReplayRejected => "replay_rejected",
             BlockedReason::OverPerTxCap => "over_per_tx_cap",
             BlockedReason::OverBudget => "over_budget",
@@ -64,12 +61,24 @@ impl Decision {
 /// The fail-closed evaluation. Checks run cheapest-trust-first; the ledger is
 /// mutated only after EVERY check passes. Any failure returns `Blocked` with the
 /// ledger untouched.
+///
+/// `profile` is the user's raw PII (from the WIT `user-profile` field). It is
+/// available to the guard here, INSIDE the enclave, for policy decisions — but
+/// it can never cross back out: `Decision` carries only an integer, and the
+/// caller-facing `EvalResult` carries no PII-shaped field. That is the
+/// structural PII guarantee — not a flag the caller sets on itself.
 pub fn evaluate(
     req: &ActionRequest,
     signed: &SignedMandate,
     ledger: &mut Ledger,
     now_unix: u64,
+    profile: Option<&[u8]>,
 ) -> Decision {
+    // PII is usable inside the enclave (here we'd resolve {{profile.*}} markers
+    // host-side for the outbound call). We touch it to make the point that it
+    // lives in here, never in the result type.
+    let _profile_present = profile.is_some();
+
     // 1. The mandate must be genuinely signed by its own owner key.
     if !signed.signature_valid() {
         return Decision::Blocked(BlockedReason::ForgedMandate);
@@ -86,22 +95,17 @@ pub fn evaluate(
         return Decision::Blocked(BlockedReason::ActionNotPermitted);
     }
 
-    // 4. No action may carry raw PII back across the boundary.
-    if req.returns_pii {
-        return Decision::Blocked(BlockedReason::PiiForbidden);
-    }
-
-    // 5. Each nonce is single-use.
+    // 4. Each nonce is single-use (strictly-increasing watermark).
     if ledger.is_nonce_used(req.nonce) {
         return Decision::Blocked(BlockedReason::ReplayRejected);
     }
 
-    // 6. Per-transaction cap.
+    // 5. Per-transaction cap.
     if req.amount > m.per_tx_cap {
         return Decision::Blocked(BlockedReason::OverPerTxCap);
     }
 
-    // 7. Cumulative budget. Saturating add so a crafted huge amount can't wrap.
+    // 6. Cumulative budget. Saturating add so a crafted huge amount can't wrap.
     if ledger.spent.saturating_add(req.amount) > m.budget_total {
         return Decision::Blocked(BlockedReason::OverBudget);
     }
@@ -132,7 +136,7 @@ mod tests {
     }
 
     fn req(action: &str, amount: u64, nonce: u64) -> ActionRequest {
-        ActionRequest { action: action.into(), amount, nonce, returns_pii: false }
+        ActionRequest { action: action.into(), amount, nonce }
     }
 
     #[test]
@@ -140,7 +144,7 @@ mod tests {
         let signer = ed25519_dalek::SigningKey::generate(&mut rand::rngs::OsRng);
         let m = base_mandate(&signer);
         let mut l = Ledger::new();
-        let d = evaluate(&req("pay_vendor", 200, 1), &m, &mut l, 1000);
+        let d = evaluate(&req("pay_vendor", 200, 1), &m, &mut l, 1000, None);
         assert_eq!(d, Decision::Allow { new_spent: 200 });
         assert_eq!(l.spent, 200);
     }
@@ -150,12 +154,25 @@ mod tests {
         let signer = ed25519_dalek::SigningKey::generate(&mut rand::rngs::OsRng);
         let m = base_mandate(&signer);
         let mut l = Ledger::new();
-        assert!(evaluate(&req("pay_vendor", 300, 1), &m, &mut l, 1000).is_allowed());
-        assert!(evaluate(&req("pay_vendor", 200, 2), &m, &mut l, 1000).is_allowed());
+        assert!(evaluate(&req("pay_vendor", 300, 1), &m, &mut l, 1000, None).is_allowed());
+        assert!(evaluate(&req("pay_vendor", 200, 2), &m, &mut l, 1000, None).is_allowed());
         assert_eq!(l.spent, 500);
         // Budget exhausted; even a 1-unit spend bounces, ledger frozen at 500.
-        let d = evaluate(&req("pay_vendor", 1, 3), &m, &mut l, 1000);
+        let d = evaluate(&req("pay_vendor", 1, 3), &m, &mut l, 1000, None);
         assert_eq!(d, Decision::Blocked(BlockedReason::OverBudget));
         assert_eq!(l.spent, 500);
+    }
+
+    #[test]
+    fn profile_is_usable_inside_but_never_returned() {
+        // Even when raw PII is handed in, the Decision type carries only an
+        // integer — there is no variant/field for profile bytes to ride out.
+        let signer = ed25519_dalek::SigningKey::generate(&mut rand::rngs::OsRng);
+        let m = base_mandate(&signer);
+        let mut l = Ledger::new();
+        let pii = br#"{"name":"Jane Doe","ssn":"123-45-6789"}"#;
+        let d = evaluate(&req("pay_vendor", 10, 1), &m, &mut l, 1000, Some(pii));
+        // Allowed, and the only thing crossing back is the new spend total.
+        assert_eq!(d, Decision::Allow { new_spent: 10 });
     }
 }

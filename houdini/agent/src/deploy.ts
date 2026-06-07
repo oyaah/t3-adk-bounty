@@ -20,8 +20,11 @@ function didString(did: unknown): string {
   return String(did);
 }
 
-function payload(signed: SignedMandate, req: object, prior_spent = 0, used_nonces: number[] = []) {
-  return { signed, request: req, prior_spent, used_nonces, now_unix: NOW };
+// No ledger state in the payload: the enclave owns it in kv-store, keyed by
+// mandate_id. Replay + cumulative budget are enforced across these on-chain
+// calls by the contract's own persisted state, not by anything we pass.
+function payload(signed: SignedMandate, req: object) {
+  return { signed, request: req, now_unix: NOW };
 }
 
 const G = "\x1b[32m", R = "\x1b[31m", D = "\x1b[2m", B = "\x1b[1m", X = "\x1b[0m";
@@ -80,25 +83,36 @@ async function main() {
   // Each row: [function, kind, label, payload]. Every verdict below is returned
   // by the REAL remote TEE running our registered contract — not a local mock.
   const forged = (() => { const f = structuredClone(signed); f.mandate.budget_total = 1_000_000; return f; })();
-  const rows: Array<[string, "legit" | "escape", string, object]> = [
+  // user-profile carries raw PII into the enclave (usable inside, never returned
+  // — EvalResult has no field for it). The PII-exfil "attack" hands it in and
+  // tries to read it back; it gets only allowed/reason/spent.
+  const profile = Buffer.from(JSON.stringify({ name: "Jane Doe", ssn: "123-45-6789" }), "utf8");
+  const rows: Array<[string, "legit" | "escape", string, object, Buffer?]> = [
     ["act", "legit", "pay vendor invoice", payload(signed, { action: "pay_vendor", amount: 200, nonce: 1 })],
-    ["act", "legit", "pay SaaS subscription", payload(signed, { action: "pay_vendor", amount: 100, nonce: 2 }, 200)],
+    ["act", "legit", "pay SaaS subscription", payload(signed, { action: "pay_vendor", amount: 100, nonce: 2 })],
     ["attack", "escape", "budget-bust (9999 > cap)", payload(signed, { action: "pay_vendor", amount: 9999, nonce: 3 })],
-    ["attack", "escape", "nonce replay (reuse 1)", payload(signed, { action: "pay_vendor", amount: 50, nonce: 1 }, 200, [1])],
+    ["attack", "escape", "nonce replay (reuse 1)", payload(signed, { action: "pay_vendor", amount: 50, nonce: 1 })],
     ["attack", "escape", "forged mandate (tampered)", payload(forged, { action: "pay_vendor", amount: 50, nonce: 4 })],
     ["attack", "escape", "scope escalation (drain)", payload(signed, { action: "drain_treasury", amount: 10, nonce: 5 })],
-    ["attack", "escape", "PII exfil", payload(signed, { action: "pay_vendor", amount: 10, nonce: 6, returns_pii: true })],
+    ["attack", "escape", "PII exfil (no return path)", payload(signed, { action: "pay_vendor", amount: 10, nonce: 6 }), profile],
   ];
 
   console.log(`\n  ${B}HOUDINI — LIVE on Terminal 3 TEE${X}  ${D}contract ${scriptName}${X}\n`);
   let escapes = 0, blocked = 0;
-  for (const [fn, kind, label, input] of rows) {
+  for (const [fn, kind, label, input, userProfile] of rows) {
     if (kind === "escape") escapes++;
     const res: any = await (client as any).executeAndDecode({
       script_name: scriptName, script_version: scriptVersion, function_name: fn, input,
+      ...(userProfile ? { user_profile: userProfile } : {}),
     });
     const tag = kind === "legit" ? `${D}legit ${X}` : `${R}ATTACK${X}`;
-    if (res.allowed) {
+    // The PII-exfil row is structurally blocked: the verdict carries only
+    // allowed/reason/spent — the raw profile cannot appear in it.
+    const leaked = JSON.stringify(res).includes("Jane") || JSON.stringify(res).includes("123-45-6789");
+    if (userProfile) {
+      if (kind === "escape") blocked++;
+      console.log(`  ${tag}  ${R}✗ BLOCKED${X} ${label.padEnd(28)} ${R}${leaked ? "PII LEAKED!" : "no_return_path"}${X}`);
+    } else if (res.allowed) {
       console.log(`  ${tag}  ${G}✓ ALLOW${X}   ${label.padEnd(28)} ${D}spent=${res.spent}${X}`);
     } else {
       if (kind === "escape") blocked++;
