@@ -2,7 +2,7 @@
 
 **Submitted by:** Yash Bansal · GitHub [@oyaah](https://github.com/oyaah)
 **Date:** 2026-06-07
-**Track:** $200 Bug Discovery Bounty (Terminal 3 ADK Bounty Challenge, beta)
+**Terminal 3 SDK bug & documentation-gap report**
 **Scope:** Onboarding journey + ADK docs (`docs.terminal3.io`) cross-checked against the **shipped SDK** (`@terminal3/t3n-sdk@3.5.0`, type defs) and the **official sample** (`github.com/Terminal-3/z-tenant-flight`).
 **Method:** Walked the documented onboarding path on macOS (Node 25, Rust 1.96, `wasm32-wasip2`). Installed the real SDK + toolchain, built the official sample contract, and diffed every doc example against shipped `.d.ts` exports and the sample's real WIT/Cargo/README.
 

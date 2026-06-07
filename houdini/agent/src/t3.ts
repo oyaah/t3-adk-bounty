@@ -47,6 +47,7 @@ export async function connectLive(): Promise<LiveSession | null> {
     handlers: { EthSign: sdk.metamask_sign(address, undefined, key) },
   });
   await client.handshake();
-  const did = await client.authenticate(sdk.createEthAuthInput(address)); // arg required (BUG-12)
+  const rawDid = await client.authenticate(sdk.createEthAuthInput(address)); // arg required (BUG-12)
+  const did = String((rawDid as any)?.value ?? rawDid);
   return { mode: "live", did, address, client, sdk };
 }

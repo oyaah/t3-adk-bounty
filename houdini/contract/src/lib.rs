@@ -98,17 +98,21 @@ mod wasm_component {
     struct KvStore;
 
     impl KvStore {
-        fn map_name() -> &'static str {
-            // Production namespaces by tenant DID (z:<tid>:houdini); for the
-            // contract artifact we use a stable map name.
-            "z:houdini:ledger"
+        // Build the real namespaced map name z:<tid>:ledger at runtime from the
+        // tenant DID the host minted for this contract. The map (tail "ledger")
+        // is provisioned by the deployer via maps.create with this contract as
+        // sole reader/writer.
+        fn map_name() -> String {
+            use host::tenant::tenant_context;
+            let tid = tenant_context::tenant_did();
+            format!("z:{}:ledger", hex::encode(tid))
         }
     }
 
     impl LedgerStore for KvStore {
         fn load(&self, mandate_id: &str) -> Ledger {
             use host::interfaces::kv_store;
-            match kv_store::get(Self::map_name(), mandate_id.as_bytes()) {
+            match kv_store::get(&Self::map_name(), mandate_id.as_bytes()) {
                 Ok(Some(bytes)) => {
                     let v: serde_json::Value =
                         serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null);
@@ -126,7 +130,7 @@ mod wasm_component {
             let mut led = self.load(mandate_id);
             led.commit(nonce, amount);
             let body = serde_json::json!({ "spent": led.spent, "last_nonce": led.last_nonce });
-            let _ = kv_store::put(Self::map_name(), mandate_id.as_bytes(), body.to_string().as_bytes());
+            let _ = kv_store::put(&Self::map_name(), mandate_id.as_bytes(), body.to_string().as_bytes());
         }
     }
 

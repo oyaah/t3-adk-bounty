@@ -9,4 +9,4 @@ if (!r) {
 }
 console.log("LIVE auth OK");
 console.log("  address:", r.address);
-console.log("  did:    ", r.did.value || r.did);
+console.log("  did:    ", r.did);

@@ -11,7 +11,7 @@ import { newOwner, signMandate, type SignedMandate } from "./mandate.js";
 const __dir = dirname(fileURLToPath(import.meta.url));
 const WASM = resolve(__dir, "../../contract/target/wasm32-wasip2/release/houdini_contract.wasm");
 const TAIL = "houdini-guard";
-const VERSION = "0.1.0";
+const VERSION = "0.3.0";
 const NOW = Math.floor(Date.now() / 1000);
 
 function didString(did: unknown): string {
@@ -57,8 +57,10 @@ async function main() {
   // [3] Register the real WASM contract.
   const wasm = await readFile(WASM);
   console.log(`[3] registering ${TAIL}@${VERSION} (${wasm.length} bytes wasm)…`);
+  let contractId: number | undefined;
   try {
-    const reg = await tenant.contracts.register({ tail: TAIL, version: VERSION, wasm });
+    const reg: any = await tenant.contracts.register({ tail: TAIL, version: VERSION, wasm });
+    contractId = reg?.contract_id;
     console.log(`[3] registered:`, JSON.stringify(reg).slice(0, 200));
   } catch (e) {
     const msg = (e as Error).message;
@@ -66,6 +68,24 @@ async function main() {
       console.log(`[3] already registered at ${VERSION} (idempotent re-run)`);
     } else {
       throw e;
+    }
+  }
+
+  // [3b] Provision the enclave-owned ledger map (tail "ledger" -> z:<tid>:ledger),
+  // readable+writable only by this contract. Without it the kv-backed contract
+  // 500s on first access. Idempotent.
+  if (contractId !== undefined) {
+    try {
+      await tenant.maps.create({
+        tail: "ledger",
+        visibility: "private",
+        writers: { only: [contractId] },
+        readers: { only: [contractId] },
+      });
+      console.log(`[3b] ledger map created (writers/readers = contract ${contractId})`);
+    } catch (e) {
+      const msg = (e as Error).message;
+      console.log(`[3b] ledger map: ${msg.slice(0, 90)} (continuing — likely already exists)`);
     }
   }
 
