@@ -34,7 +34,8 @@ export interface EvalResult {
 
 /** Path to the compiled Rust evaluator (host release build). */
 export function evalBinPath(): string {
-  return resolve(__dir, "../../contract/target/release/eval");
+  const exe = process.platform === "win32" ? "eval.exe" : "eval";
+  return resolve(__dir, "../../contract/target/release", exe);
 }
 
 /**
