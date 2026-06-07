@@ -57,6 +57,8 @@ $ node verify.mjs
 # 10 bugs confirmed present, 0 not reproduced
 ```
 
+> ⚠️ **Re-verification note (2026-06-07):** this harness asserts the SDK's **shape** (no `apiKey` field, `setEnvironment` is module-level, helpers are real exports). It does NOT check what the docs currently say. Against the **current live docs**, BUG-01/02/11/12/13 **no longer reproduce** — the docs were corrected to match the SDK. Still valid here: **BUG-06** (`kv().set()` does not exist; `executeControl`/`canonicalName` are the real surface). Full per-bug status in BUGLOG.md.
+
 ## 5. npm audit (BUG-24)
 ```
 # npm audit report

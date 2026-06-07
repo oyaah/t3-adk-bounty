@@ -6,14 +6,14 @@
 
 ## TL;DR
 
-I installed the real ADK toolchain end-to-end, built the official sample contract, ran its tests, and diffed **every** documentation example against the **shipped SDK** (`@terminal3/t3n-sdk@3.5.0`) and the **official sample** (`z-tenant-flight`). Result: **34 distinct bugs / documentation gaps**, including **4 critical** issues where a developer following the docs literally cannot succeed. A runnable harness (`node verify.mjs`) confirms 10 of them automatically (10/10). I also ship a corrected, working onboarding guide (`FIXED-ONBOARDING.md`).
+I installed the real ADK toolchain end-to-end, built the official sample contract, ran its tests, and diffed **every** documentation example against the **shipped SDK** (`@terminal3/t3n-sdk@3.5.0`) and the **official sample** (`z-tenant-flight`). Result: **34 distinct bugs / documentation gaps**. On submission day I re-verified all of them against the **current live docs**: **27 still reproduce** (2 critical); **7 no longer reproduce** because the live docs now match the SDK, and are kept for transparency (flagged in BUGLOG). A runnable harness (`node verify.mjs`) confirms the SDK's *shape* automatically (10/10) — note that asserts the shipped types, not that the docs still disagree. I also ship a corrected, working onboarding guide (`FIXED-ONBOARDING.md`).
 
-Critical issues:
+Critical issues (confirmed against current live docs):
 
-1. **`T3nClient` takes no API key** — docs say to pass one; the shipped `T3nClientConfig` has no such field (requires `wasmComponent`).
-2. **`setEnvironment` is a module-level function**, not a `T3nClient` method as documented (`client.setEnvironment` → `TypeError`).
-3. **Docs' contract WIT is invalid** — uses `t3n:host/*@0.1.0` + `export t3n:contract/dispatch`; the real host uses `host:interfaces/*@2.1.0` + `export contracts`. Proven against the compiled component.
-4. **The onboarding walkthrough omits mandatory steps** (host-capability manifest, KV map creation, secret seeding, egress grant) — invocation fails without them.
+1. **Docs' contract WIT is invalid** [BUG-03] — uses `t3n:host/*@0.1.0` + `export t3n:contract/dispatch@0.1.0`; the real host uses `host:interfaces/*@2.1.0` + `export contracts`. Proven against the compiled component.
+2. **The onboarding walkthrough omits mandatory steps** [BUG-04] (KV map creation, secret seeding, host-capability steps, egress grant) — invocation fails without them.
+
+> Two earlier "critical" findings — `T3nClient` taking an API key [BUG-01] and `client.setEnvironment()` [BUG-02] — **no longer reproduce** against the current live docs (which now show `new T3nClient({ wasmComponent, handlers })` and standalone `setEnvironment`). Retained in BUGLOG for transparency; not claimed as active.
 
 Full itemized report with severities, repros, file/line citations, and fixes: **[BUGLOG.md](./BUGLOG.md)**.
 
@@ -46,7 +46,7 @@ world root {
 }
 ```
 
-### Shipped SDK config (disproves docs BUG-01)
+### Shipped SDK config (real shape behind BUG-01 / BUG-02)
 ```
 // dist/index.d.ts:1244
 interface T3nClientConfig {
@@ -58,12 +58,13 @@ interface T3nClientConfig {
 // dist/index.d.ts:2934
 declare function setEnvironment(env: Environment): void;   // module-level, not a method
 ```
+> Note: this proves the SDK's real *shape*. As of 2026-06-07 the live docs already match it, so BUG-01/BUG-02 no longer reproduce as documentation discrepancies — see the re-verification section in BUGLOG.md.
 
 ## Repo contents
 
 | File | Purpose |
 |---|---|
-| `BUGLOG.md` | Full 34-item report (severity, repro, citation, fix) |
+| `BUGLOG.md` | Full 34-item report + submission-day re-verification (34 documented / 27 reproduce on current live docs; severity, repro, citation, fix) |
 | `FIXED-ONBOARDING.md` | Corrected, working onboarding guide derived from real SDK + sample |
 | `PROOF.md` | Captured command outputs (build, tests, component WIT, harness, audit) |
 | `verify.mjs` | Runnable harness asserting 10 SDK-surface bugs (`npm test` → 10/10) |
