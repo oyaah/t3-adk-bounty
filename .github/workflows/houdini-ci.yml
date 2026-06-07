@@ -1,0 +1,59 @@
+name: houdini-ci
+
+on:
+  push:
+    branches: ["**"]
+    paths: ["houdini/**", ".github/workflows/houdini-ci.yml"]
+  pull_request:
+    paths: ["houdini/**", ".github/workflows/houdini-ci.yml"]
+
+defaults:
+  run:
+    working-directory: houdini
+
+jobs:
+  contract:
+    name: TEE contract — build + escape matrix
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip2
+      - name: Install wasm-tools
+        run: cargo install wasm-tools --locked || cargo install wasm-tools
+      - name: Host tests (guard unit tests)
+        run: cargo test --lib --manifest-path contract/Cargo.toml
+      - name: Escape matrix (5 self-attacks must all be blocked)
+        run: cargo test --test escape_matrix --manifest-path contract/Cargo.toml
+      - name: Build WASM component (wasm32-wasip2)
+        run: cargo build --release --target wasm32-wasip2 --manifest-path contract/Cargo.toml
+      - name: Verify component exports the contracts interface
+        run: |
+          wasm-tools component wit \
+            contract/target/wasm32-wasip2/release/houdini_contract.wasm \
+            | grep -q "export houdini:contract/contracts" \
+            && echo "OK: contract interface exported"
+      - name: Build host eval bridge binary
+        run: cargo build --release --bin eval --manifest-path contract/Cargo.toml
+      - name: Red Room demo runs and blocks all escapes (exit 0)
+        run: cargo run --release --bin redroom --manifest-path contract/Cargo.toml
+
+  agent:
+    name: Agent — SDK auth + TS↔contract bridge
+    runs-on: ubuntu-latest
+    needs: contract
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build eval bridge binary (needed by bridge tests)
+        run: cargo build --release --bin eval --manifest-path contract/Cargo.toml
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install agent deps
+        working-directory: houdini/agent
+        run: npm install
+      - name: Run agent tests (harness auth + cross-language bridge)
+        working-directory: houdini/agent
+        run: npm test

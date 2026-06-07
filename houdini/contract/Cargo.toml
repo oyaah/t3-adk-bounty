@@ -1,0 +1,27 @@
+[package]
+name = "houdini-contract"
+version = "0.1.0"
+edition = "2021"
+description = "Houdini — a Terminal 3 TEE contract that enforces a user-signed agent mandate it cannot escape"
+license = "MIT"
+publish = false
+
+[lib]
+# cdylib -> WASM component for the TEE; lib -> host-side unit/integration tests
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+rand = "0.8"
+hex = "0.4"
+
+# Only linked into the wasm component build; harmless on host.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wit-bindgen = { version = "0.49", features = ["macros", "realloc"] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true
