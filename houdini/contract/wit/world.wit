@@ -1,0 +1,38 @@
+/// Houdini contract WIT world.
+///
+/// Production build additionally imports the real Terminal 3 host interfaces for
+/// ledger persistence and audit logging (verified names/versions, see
+/// ../../FIXED-ONBOARDING.md):
+///
+///     import host:tenant/tenant-context@1.0.0;
+///     import host:interfaces/logging@2.1.0;
+///     import host:interfaces/kv-store@2.1.0;
+///
+/// The offline demo component is self-contained — the host passes current
+/// ledger state in the call payload — so it compiles deterministically without
+/// the host packages present (KTD-2: local enclave-faithful harness).
+package houdini:contract@0.1.0;
+
+world contract {
+    export contracts;
+}
+
+interface contracts {
+    /// Standard Terminal 3 3-field envelope (mirrors the z-tenant-flight sample).
+    /// `input` is the JSON-serialized EvalPayload; the other two are unused here.
+    record generic-input {
+        input:        option<list<u8>>,
+        user-profile: option<list<u8>>,
+        context:      option<list<u8>>,
+    }
+
+    /// A legitimate action the agent proposes under its mandate.
+    /// Input  (JSON): EvalPayload { signed, request, prior_spent, used_nonces, now_unix }
+    /// Output (JSON): EvalResult  { allowed, reason, spent }
+    act: func(req: generic-input) -> result<list<u8>, string>;
+
+    /// An escape attempt from the self-attack swarm. Routed through the SAME
+    /// guard as `act` — the contract cannot tell friend from foe, and does not
+    /// need to: the mandate is enforced identically for both.
+    attack: func(req: generic-input) -> result<list<u8>, string>;
+}
