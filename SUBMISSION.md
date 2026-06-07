@@ -6,7 +6,7 @@
 
 ## TL;DR
 
-I installed the real ADK toolchain end-to-end, built the official sample contract, ran its tests, and diffed **every** documentation example against the **shipped SDK** (`@terminal3/t3n-sdk@3.5.0`) and the **official sample** (`z-tenant-flight`). Result: **34 distinct bugs / documentation gaps**. On submission day I re-verified all of them against the **current live docs**: **27 still reproduce** (2 critical); **7 no longer reproduce** because the live docs now match the SDK, and are kept for transparency (flagged in BUGLOG). A runnable harness (`node verify.mjs`) confirms the SDK's *shape* automatically (10/10) — note that asserts the shipped types, not that the docs still disagree. I also ship a corrected, working onboarding guide (`FIXED-ONBOARDING.md`).
+I installed the real ADK toolchain end-to-end, built the official sample contract, ran its tests, and diffed **every** documentation example against the **shipped SDK** (`@terminal3/t3n-sdk@3.5.0`) and the **official sample** (`z-tenant-flight`). Result: **27 reproducing onboarding bugs & documentation gaps**, verified against the **current live docs/SDK/sample on submission day** (2 critical). (I originally documented 34; 7 no longer reproduce because Terminal 3 corrected those docs since I found them — kept and flagged in BUGLOG for transparency, excluded from the count.) A runnable harness (`node verify.mjs`) confirms the SDK's *shape* automatically (10/10) — note that asserts the shipped types, not that the docs still disagree. I also ship a corrected, working onboarding guide (`FIXED-ONBOARDING.md`).
 
 Critical issues (confirmed against current live docs):
 
