@@ -1,0 +1,13 @@
+{
+  "name": "t3-bounty",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "description": "Terminal 3 ADK onboarding driver + bug repro for $200 bounty",
+  "scripts": {
+    "start": "node index.mjs"
+  },
+  "dependencies": {
+    "@terminal3/t3n-sdk": "^3.5.0"
+  }
+}
