@@ -16,10 +16,12 @@
 | Severity | Count |
 |----------|-------|
 | Critical | 4 |
-| High | 9 |
-| Medium | 7 |
-| Low | 4 |
-| **Total** | **24** |
+| High | 12 |
+| Medium | 11 |
+| Low | 7 |
+| **Total** | **34** |
+
+> Sections A–E verified against shipped code; Section F adds sample-source vs docs contradictions; all 10 SDK-surface bugs are confirmed by a runnable harness (`node verify.mjs` → 10/10). Full command outputs in [PROOF.md](./PROOF.md). A corrected, working onboarding guide is in [FIXED-ONBOARDING.md](./FIXED-ONBOARDING.md).
 
 **Headline findings (proof-grade):**
 1. Docs say *"initialize a `T3nClient` with your API key"* — the shipped `T3nClientConfig` has **no `apiKey` field** (requires `wasmComponent`). The documented auth model is wrong.
@@ -159,6 +161,60 @@
 - **Advisory:** `ws` Uninitialized memory disclosure — **GHSA-58qx-3vcg-4xpx**. npm reports **"No fix available"** (no patched `ws` in the range `ethers` pins).
 - **Why it matters:** the ADK's entire value prop is security/privacy; shipping a known unpatched memory-disclosure transitive dep undercuts that and is silent during onboarding.
 - **Fix:** bump `ethers` to a release pinning `ws > 8.20.0`, or add an `overrides`/`resolutions` entry + note it in the install docs.
+- **Severity:** Medium.
+
+---
+
+## F. Sample-source vs docs contradictions (read from official sample)
+
+### BUG-25 — [HIGH] README `book-offer` input schema is rejected by the contract
+- **Doc:** sample README shows `book-offer` input with a `passengers` array carrying full PII (`given_name`, `family_name`, `date_of_birth`, `passport_number`, …).
+- **Reality (`src/booking.rs`):** `BookOfferReq { offer_id, passenger_id, total_amount, total_currency }` — there is **no `passengers` field**. The contract's own test `book_offer_rejects_inline_pii_fields` asserts that passing `passengers` → `"bad input"` error.
+- **Impact:** The "complete working example" documents an input the code refuses. Anyone copying the README payload gets a hard error.
+- **Severity:** High.
+
+### BUG-26 — [HIGH] Docs HTTP request/response API shape is wrong
+- **Doc:** write-contract `search.rs` — `http_iface::call(&http_iface::Request { method: "POST".to_string(), url, headers, body })`, reads `resp.body`.
+- **Reality (`src/booking.rs`/`search.rs`):** `method` is an enum `Verb::Post` (not a `String`); the body field is `payload` (not `body`); the response exposes `resp.payload` **and** `resp.code` (no `resp.body`). Errors are a typed `HttpError` enum (`EgressDenied`, `PlaceholderDenied`, …).
+- **Impact:** Docs HTTP snippet does not compile against the real bindings.
+- **Severity:** High.
+
+### BUG-27 — [HIGH] `capabilities-from-wit-import` repeats the wrong host namespace
+- **Doc:** lists `t3n:host/kv-store@0.1.0`, `t3n:host/logging@0.1.0`, `t3n:host/tenant-context@0.1.0`, `t3n:host/http-iface@0.1.0`.
+- **Reality (compiled component):** `host:interfaces/kv-store@2.1.0`, `host:interfaces/logging@2.1.0`, `host:tenant/tenant-context@1.0.0`, `host:interfaces/http@2.1.0`, **plus** `host:interfaces/http-with-placeholders@2.1.0` which the page omits entirely.
+- **Impact:** A second page (besides write-contract) propagates the invalid namespace/version and a wrong interface name (`http-iface` vs `http`), and misses the placeholders capability.
+- **Severity:** High.
+
+### BUG-28 — [MEDIUM] README capability manifest is missing `http_with_placeholders`
+- **Doc:** README "Host-capability manifest" lists 4: `["kv_store","logging","tenant_context","http"]`.
+- **Reality (`src/lib.rs` doc-comment):** lists 5, including `"http_with_placeholders"` — which `book-offer` requires (it imports + calls `http-with-placeholders`). With the README's 4-cap manifest, `book-offer` fails the capability check.
+- **Severity:** Medium.
+
+### BUG-29 — [MEDIUM] Manifest capability names vs WIT interface names mapping undocumented
+- Manifest uses snake_case (`kv_store`, `http_with_placeholders`); WIT imports use namespaced kebab-case (`host:interfaces/kv-store`, `host:interfaces/http-with-placeholders`). The mapping between the two naming schemes is never documented.
+- **Severity:** Medium.
+
+### BUG-30 — [MEDIUM] Data-flow / privacy description is inaccurate
+- **Doc:** README says `book-offer` "POST to Duffel `/air/orders` with full passenger PII" and "passenger PII … is passed in by the agent."
+- **Reality (`src/booking.rs`):** name/DOB/gender/email are resolved from the **user profile** via `{{profile.*}}` placeholders (not passed by the agent); passport/title/phone are **hardcoded demo values** (`X12345678`, `mr`, `+44…`). The agent passes none of the PII. The privacy narrative overstates/misdescribes the actual flow.
+- **Severity:** Medium.
+
+### BUG-31 — [LOW] Non-existent `z_sdk.kv().set()` API in README *and* source comments
+- The pseudocode `z_sdk.kv("secrets").set("duffel_api_key", ...)` appears in both README and `src/lib.rs` doc-comments. No such API exists in the SDK (`executeControl("map-entry-set", …)` is the real surface — BUG-06).
+- **Severity:** Low.
+
+### BUG-32 — [LOW] Duffel endpoint spelling inconsistent in README
+- README table says `POST /air/offer-requests` (hyphen); code uses `/air/offer_requests` (underscore — the real Duffel path).
+- **Severity:** Low.
+
+### BUG-33 — [LOW] README `cargo test --lib` does not execute tests
+- `.cargo/config.toml` defaults the target to `wasm32-wasip2`, so `cargo test --lib` builds a `.wasm` test binary that won't run without a wasm runtime. Native run requires `cargo test --lib --target <host-triple>` (verified: 7/7 pass on `aarch64-apple-darwin`).
+- **Severity:** Low.
+
+### BUG-34 — [MEDIUM] SDK `exports` map blocks `./package.json`
+- **Repro:** `import "@terminal3/t3n-sdk/package.json"` → `ERR_PACKAGE_PATH_NOT_EXPORTED`.
+- **Cause:** the package's `exports` field defines only `"."` and `"./wasm/generated/session.js"`; the conventional `"./package.json"` subpath is omitted, breaking tools that read it (version detection, bundler plugins).
+- **Fix:** add `"./package.json": "./package.json"` to `exports`.
 - **Severity:** Medium.
 
 ---

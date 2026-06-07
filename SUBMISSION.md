@@ -6,7 +6,9 @@
 
 ## TL;DR
 
-I installed the real ADK toolchain end-to-end, built the official sample contract, and diffed **every** documentation example against the **shipped SDK** (`@terminal3/t3n-sdk@3.5.0`) and the **official sample** (`z-tenant-flight`). Result: **24 distinct bugs / documentation gaps**, including **4 critical** issues where a developer following the docs literally cannot succeed:
+I installed the real ADK toolchain end-to-end, built the official sample contract, ran its tests, and diffed **every** documentation example against the **shipped SDK** (`@terminal3/t3n-sdk@3.5.0`) and the **official sample** (`z-tenant-flight`). Result: **34 distinct bugs / documentation gaps**, including **4 critical** issues where a developer following the docs literally cannot succeed. A runnable harness (`node verify.mjs`) confirms 10 of them automatically (10/10). I also ship a corrected, working onboarding guide (`FIXED-ONBOARDING.md`).
+
+Critical issues:
 
 1. **`T3nClient` takes no API key** — docs say to pass one; the shipped `T3nClientConfig` has no such field (requires `wasmComponent`).
 2. **`setEnvironment` is a module-level function**, not a `T3nClient` method as documented (`client.setEnvironment` → `TypeError`).
@@ -61,17 +63,21 @@ declare function setEnvironment(env: Environment): void;   // module-level, not 
 
 | File | Purpose |
 |---|---|
-| `BUGLOG.md` | Full 24-item report (severity, repro, citation, fix) |
+| `BUGLOG.md` | Full 34-item report (severity, repro, citation, fix) |
+| `FIXED-ONBOARDING.md` | Corrected, working onboarding guide derived from real SDK + sample |
+| `PROOF.md` | Captured command outputs (build, tests, component WIT, harness, audit) |
+| `verify.mjs` | Runnable harness asserting 10 SDK-surface bugs (`npm test` → 10/10) |
 | `PLAN.md` | Strategy + step-by-step repro plan |
 | `index.mjs` | Onboarding driver stitched from docs (triggers the SDK-surface bugs) |
-| `z-tenant-flight/` | Official sample, built locally as the control |
+| `z-tenant-flight/` | Official sample, built + tested locally as the control |
 
 ## How to reproduce
 
 ```bash
 npm install                                  # pulls @terminal3/t3n-sdk@3.5.0 (note: 3 moderate vulns — BUG-24)
+npm test                                     # verify.mjs → 10/10 SDK-surface bugs confirmed
 rustup target add wasm32-wasip2
 cd z-tenant-flight && cargo build --target wasm32-wasip2 --release
 wasm-tools component wit target/wasm32-wasip2/release/z_tenant_flight.wasm   # compare exports to docs
-node ../index.mjs                            # triggers BUG-01/02/11/12/13 against the SDK surface
+cargo test --lib --target "$(rustc -vV | sed -n 's/host: //p')"             # 7/7 pass (control)
 ```
