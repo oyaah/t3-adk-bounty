@@ -153,8 +153,12 @@
 - KV governor "defaults to deny"; omitting `readers` → silent `AccessDenied`. Warning lives only in tips, not the (missing) walkthrough map step.
 - **Severity:** Low.
 
-### BUG-24 — [MEDIUM] `npm install @terminal3/t3n-sdk` reports 3 moderate vulnerabilities
-- Fresh install on Node 25 emits "3 moderate severity vulnerabilities" via transitive deps. Onboarding docs don't note this or provide guidance.
+### BUG-24 — [MEDIUM] SDK ships a transitive vuln with no fix available
+- **Repro:** `npm install @terminal3/t3n-sdk` → `npm audit` → 3 moderate.
+- **Chain:** `@terminal3/t3n-sdk@3.5.0` → `ethers (>=6.0.0-beta.1)` → `ws@8.0.0–8.20.0`.
+- **Advisory:** `ws` Uninitialized memory disclosure — **GHSA-58qx-3vcg-4xpx**. npm reports **"No fix available"** (no patched `ws` in the range `ethers` pins).
+- **Why it matters:** the ADK's entire value prop is security/privacy; shipping a known unpatched memory-disclosure transitive dep undercuts that and is silent during onboarding.
+- **Fix:** bump `ethers` to a release pinning `ws > 8.20.0`, or add an `overrides`/`resolutions` entry + note it in the install docs.
 - **Severity:** Medium.
 
 ---
