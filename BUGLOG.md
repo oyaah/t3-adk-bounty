@@ -14,9 +14,9 @@
 ## ⚠️ Independent re-verification (2026-06-07, against CURRENT live docs)
 Every claim was re-checked against the live `docs.terminal3.io/*.md` pages, the shipped SDK, and the sample source on the submission day.
 
-- **28 of 34 bugs still reproduce** against the current live docs/SDK/sample.
-- **6 bugs do NOT reproduce against the current live docs.** They were valid against the SDK shape / older docs, but the live `docs.terminal3.io` pages today show the correct patterns — whether patched since discovery or paraphrased loosely from the older docs, they no longer reproduce. Flagged `❌ DOES NOT REPRODUCE ON CURRENT LIVE DOCS` below: **BUG-01, BUG-02, BUG-08, BUG-11, BUG-12, BUG-13.** Retained for transparency, NOT submitted as active findings. (Note: `verify.mjs` still passes 10/10 because it only asserts the SDK's real *shape* — it cannot detect that the live docs already match it.)
-- **2 bugs reframed** for accuracy (`🟡` below): **BUG-07** (conflates map key vs map tail) and **BUG-16** (rows exist; the table simply has no fix column).
+- **27 of 34 bugs still reproduce** against the current live docs/SDK/sample.
+- **7 bugs do NOT reproduce against the current live docs.** They were valid against the SDK shape / older docs, but the live `docs.terminal3.io` pages today show the correct patterns — whether patched since discovery or paraphrased loosely from the older docs, they no longer reproduce. Flagged `❌ DOES NOT REPRODUCE ON CURRENT LIVE DOCS` below: **BUG-01, BUG-02, BUG-08, BUG-11, BUG-12, BUG-13, BUG-17.** Retained for transparency, NOT submitted as active findings. (Note: `verify.mjs` still passes 10/10 because it only asserts the SDK's real *shape* — it cannot detect that the live docs already match it.)
+- **6 bugs reframed / overstated** (`🟡` below): **BUG-07, BUG-15, BUG-16, BUG-20, BUG-22, BUG-29** — each has a real kernel but the original wording over-claims; see inline notes. Several are candidates for severity downgrade.
 - **Surviving headline criticals: BUG-03 and BUG-04** (both confirmed against live `write-contract` / walkthrough today).
 
 ## Summary
@@ -25,11 +25,11 @@ Every claim was re-checked against the live `docs.terminal3.io/*.md` pages, the 
 |----------|------------|--------------------------------|
 | Critical | 4 | 2 |
 | High | 12 | 9 |
-| Medium | 11 | 10 |
+| Medium | 11 | 9 |
 | Low | 7 | 7 |
-| **Total** | **34** | **28** |
+| **Total** | **34** | **27** |
 
-> 6 originally-documented bugs (BUG-01/02/08/11/12/13) no longer reproduce against the current live docs — see re-verification note above.
+> 7 originally-documented bugs (BUG-01/02/08/11/12/13/17) no longer reproduce against the current live docs; 6 more (BUG-07/15/16/20/22/29) are reproducible but reframed/softened — see re-verification note above.
 
 > Sections A–E verified against shipped code; Section F adds sample-source vs docs contradictions; all 10 SDK-surface bugs are confirmed by a runnable harness (`node verify.mjs` → 10/10). Full command outputs in [PROOF.md](./PROOF.md). A corrected, working onboarding guide is in [FIXED-ONBOARDING.md](./FIXED-ONBOARDING.md).
 
@@ -131,6 +131,7 @@ Every claim was re-checked against the live `docs.terminal3.io/*.md` pages, the 
 - **Severity:** High.
 
 ### BUG-15 — [MEDIUM] Agent/user clients used without setup
+> 🟡 **REFRAMED (2026-06-07):** overstated — live `invoke-contract` DOES declare `agentKey`, `agentAddress`, and `agentClient`. Only `userClient` and `agentDid` are used without being defined. Narrow the claim to those two.
 - invoke-contract uses `userClient`, `agentClient`, `agentDid`, `agentAddress`, `agentKey`; setup only builds one `TenantClient`. Creation of the agent identity/key and user client is never shown.
 - **Severity:** Medium.
 
@@ -144,6 +145,7 @@ Every claim was re-checked against the live `docs.terminal3.io/*.md` pages, the 
 - **Severity:** High.
 
 ### BUG-17 — [MEDIUM] `ContractError` type never defined/imported
+> ❌ **DOES NOT REPRODUCE ON CURRENT LIVE DOCS (verified 2026-06-07):** live `write-contract` DOES import it — `use exports::t3n::contract::dispatch::{Guest, ContractInput, ContractOutput, ContractError};`. The variants aren't enumerated, but the "never imported" claim is false. Retained for transparency; not an active finding.
 - write-contract returns `ContractError::*` variants; never imported or enumerated. Doc itself admits *"contract-authored errors are undefined beyond examples."*
 - **Severity:** Medium.
 
@@ -156,6 +158,7 @@ Every claim was re-checked against the live `docs.terminal3.io/*.md` pages, the 
 - **Severity:** Medium.
 
 ### BUG-20 — [MEDIUM] snake_case vs camelCase API drift
+> 🟡 **REFRAMED (2026-06-07):** the bridging line `const contractId = result.contract_id;` IS shown on `register-contract`; it's only absent on `create-kv-maps` where `contractId` is consumed. Real but minor — reframe as "contractId origin not shown on create-kv-maps." Suggest LOW.
 - `register()` returns `result.contract_id` (snake); create-kv-maps consumes `contractId` (camel). No bridging assignment shown.
 - **Severity:** Medium.
 
@@ -168,6 +171,7 @@ Every claim was re-checked against the live `docs.terminal3.io/*.md` pages, the 
 - **Severity:** Low.
 
 ### BUG-22 — [LOW] Claim URL naming + no key recovery
+> 🟡 **REFRAMED (2026-06-07):** the no-recovery half is solid (verbatim: "the key is shown only once and can't be retrieved after you leave the page"). The URL-naming-inconsistency half could not be reproduced — drop it, keep the no-recovery point.
 - "terminal3.io/claim-page" vs "tokens claim page"; key "shown once, can't be retrieved" with no documented reissue path.
 - **Severity:** Low.
 
@@ -211,6 +215,7 @@ Every claim was re-checked against the live `docs.terminal3.io/*.md` pages, the 
 - **Severity:** Medium.
 
 ### BUG-29 — [MEDIUM] Manifest capability names vs WIT interface names mapping undocumented
+> 🟡 **REFRAMED (2026-06-07):** the docs page has no snake_case manifest (it states there isn't one), so the docs-page framing is off. The real basis is the *sample README* (`host_capabilities: ["kv_store",…]` snake_case) vs the WIT kebab-case imports — reframe around the README, not the docs page.
 - Manifest uses snake_case (`kv_store`, `http_with_placeholders`); WIT imports use namespaced kebab-case (`host:interfaces/kv-store`, `host:interfaces/http-with-placeholders`). The mapping between the two naming schemes is never documented.
 - **Severity:** Medium.
 
