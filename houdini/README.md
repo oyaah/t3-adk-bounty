@@ -51,10 +51,11 @@ Owner ──signs mandate──▶  TEE contract (Rust→WASM)         Agent (Ty
 
 ## What's live vs simulated (honest box)
 
-- ✅ **Real:** the TEE contract (compiled to `wasm32-wasip2`, verified with `wasm-tools`), the fail-closed guard, Ed25519 mandate signing/verification, the 5 enforced escape rejections, real `@terminal3/t3n-sdk` auth wiring.
-- 🟡 **Simulated for the demo (KTD-2):** the ledger is passed in the call payload rather than persisted in `host:interfaces/kv-store` (the production path), and the agent runs in **harness mode** unless `AGENT_KEY`/`AGENT_ADDRESS` are set. Live tenant deployment is the one remaining step — gated on T3's testnet register path (which we documented as buggy; see [`../BUGLOG.md`](../BUGLOG.md)).
+- ✅ **LIVE end-to-end on Terminal 3 testnet** — real Eth handshake + authenticate, our `wasm32-wasip2` contract **registered to a real tenant** (`contract_id 17`, `z:<tid>:houdini-guard`), and **executed inside the real remote TEE**: 2 legit ALLOW, 5/5 escapes BLOCKED by the enclave. Full capture in [`LIVE-PROOF.md`](./LIVE-PROOF.md). This is the gap most submissions have — they run seeded/demo-mode and never deploy.
+- ✅ **Real:** the contract + fail-closed guard, Ed25519 mandate signing/verification (TS signer verified inside the Rust contract), the 5 enforced rejections, real `@terminal3/t3n-sdk` auth (no mocks, no hardcoded address — derived from the key).
+- 🟡 **One honest limitation:** the ledger is currently passed per-call (`prior_spent`, `used_nonces`); persisting it in `host:interfaces/kv-store` so cumulative budget + replay state live inside the enclave across calls is the next step. Per-call enforcement (signature, scope, per-tx cap, PII, replay vs supplied state) is real and live today.
 
-No theater: enforcement and the attacks are genuine; only persistence + live deploy are stubbed, and labeled as such.
+No theater: auth, deploy, and enforcement are genuine and reproducible against the live network.
 
 ## Reproduce
 
@@ -71,6 +72,11 @@ wasm-tools component wit houdini/contract/target/wasm32-wasip2/release/houdini_c
 # Agent: SDK auth + TS↔contract bridge
 cargo build --release --bin eval --manifest-path houdini/contract/Cargo.toml
 cd houdini/agent && npm install && npm test
+
+# LIVE end-to-end on T3 testnet (real tenant, real TEE)
+cp .env.example .env            # add your AGENT_KEY (T3 developer key)
+set -a; . ./.env; set +a
+npx tsx src/deploy.ts           # registers the contract + runs the matrix on the live enclave
 ```
 
 See [`DEMO.md`](./DEMO.md) for the 90-second demo script.

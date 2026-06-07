@@ -9,17 +9,17 @@
 ## Verification status
 - ✅ Rust toolchain + `wasm32-wasip2` installed; **official sample builds clean** (`cargo build --target wasm32-wasip2 --release` → `z_tenant_flight.wasm`, 198 KB).
 - ✅ `@terminal3/t3n-sdk@3.5.0` installed; exports inspected from `dist/index.d.ts`.
-- ⏳ Live invocation against testnet pending valid key (runtime section D).
+- ✅ **Live invocation against testnet confirmed** with a valid developer key — auth, contract registration, and TEE execution all work (see section D). Two live bugs found.
 
 ## Summary
 
 | Severity | Count |
 |----------|-------|
 | Critical | 4 |
-| High | 12 |
-| Medium | 11 |
-| Low | 7 |
-| **Total** | **34** |
+| High | 13 |
+| Medium | 12 |
+| Low | 8 |
+| **Total** | **37** |
 
 > Sections A–E verified against shipped code; Section F adds sample-source vs docs contradictions; all 10 SDK-surface bugs are confirmed by a runnable harness (`node verify.mjs` → 10/10). Full command outputs in [PROOF.md](./PROOF.md). A corrected, working onboarding guide is in [FIXED-ONBOARDING.md](./FIXED-ONBOARDING.md).
 
@@ -219,16 +219,25 @@
 
 ---
 
-## D. Live runtime findings (fill during your own run)
+## D. Live runtime findings (reproduced end-to-end on testnet)
 
-> Run the STEPS in PLAN.md with a valid key. Paste exact terminal errors here — each upgrades a finding from "verified against shipped code" to "reproduced live end-to-end."
+Confirmed with a valid developer key: auth → `TenantClient.contracts.register` → live TEE `executeAndDecode` all work (a real contract was registered as `contract_id 17` and executed). Two bugs surfaced in the process.
 
-### BUG-25 —
-- **Step:** (setup / write / build / register / maps / seed / invoke)
-- **Command/code:**
-- **Expected:**
-- **Actual (paste exact error):**
-- **Severity:**
-- **Screenshot:**
+### BUG-35 — [HIGH] `TenantClient.tenant.claim()` returns HTTP 500 on testnet
+- **Step:** tenant claim (live).
+- **Repro:** authenticate, then `new TenantClient({ environment:"testnet", t3n, tenantDid, baseUrl }).tenant.claim()`.
+- **Actual:** `HTTP 500: Internal error [<request_id>] ({"code":"internal_error", ...})` on every attempt.
+- **Impact:** the documented "claim your tenant" onboarding step fails server-side. Contract registration + execution happen to work without it, but a developer following the docs hits a 500 with no guidance.
+- **Severity:** High — first live tenant step is broken.
 
-<!-- duplicate for each new finding -->
+### BUG-36 — [MEDIUM] `TenantClient` control ops fail without `baseUrl`, but docs/types imply `environment` is enough
+- **Step:** tenant claim / register (live).
+- **Repro:** construct `TenantClient` with `{ environment:"testnet", t3n, tenantDid }` (no `baseUrl`) → `Error: TenantClient config requires baseUrl for tenant control operations`.
+- **Impact:** `TenantClientConfig` marks both `environment?` and `baseUrl?` optional with no indication that control ops require `baseUrl`; `environment` alone is insufficient. Caller must also pass `baseUrl: getNodeUrl()`.
+- **Severity:** Medium.
+
+### BUG-37 — [LOW] Contract register tail rejects `/` while docs use `travel/contracts`
+- **Step:** register (live).
+- **Repro:** `contracts.register({ tail: "houdini/guard", ... })` → `Error: Tenant name tail must match /^[a-zA-Z0-9_-][a-zA-Z0-9_.-]{0,127}$/`.
+- **Impact:** the docs' own examples (`travel/contracts`) contain a `/`, which this validator rejects. Either the validator or the docs is wrong.
+- **Severity:** Low.
