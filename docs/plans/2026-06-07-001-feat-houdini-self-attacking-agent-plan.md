@@ -1,6 +1,6 @@
 ---
 title: "feat: Houdini — the self-attacking agent on Terminal 3 ADK"
-status: active
+status: completed
 type: feat
 date: 2026-06-07
 depth: deep
