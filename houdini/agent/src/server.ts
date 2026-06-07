@@ -5,6 +5,7 @@
 // enforced inside the enclave, not here.
 import express from "express";
 import cors from "cors";
+import rateLimit from "express-rate-limit";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { connectLive, type LiveSession } from "./t3.js";
@@ -64,8 +65,24 @@ async function judge(proposal: { action: string; amount: number; nonce: number }
 }
 
 const app = express();
-app.use(cors());
-app.use(express.json());
+app.set("trust proxy", 1); // behind Railway/Render proxy — needed for correct client IP
+
+// CORS: lock to ALLOWED_ORIGIN (comma-separated) in prod; open only when unset (local dev).
+const ALLOWED = (process.env.ALLOWED_ORIGIN ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+app.use(cors(ALLOWED.length ? { origin: ALLOWED } : {}));
+
+app.use(express.json({ limit: "8kb" }));
+
+// Per-IP rate limit on the public attack endpoint — caps spam / OpenAI cost / T3 load.
+const limiter = rateLimit({
+  windowMs: 60_000,
+  max: Number(process.env.RATE_LIMIT_PER_MIN ?? 12),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "rate limit: slow down (per-IP cap)" },
+});
+app.use("/api/attack", limiter);
+
 app.use(express.static(resolve(__dir, "../../web")));
 
 app.get("/api/mandate", (_req, res) => {

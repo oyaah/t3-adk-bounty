@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: houdini-agent
+    runtime: docker
+    plan: free            # $0; sleeps after ~15min idle, cold start on first hit
+    rootDir: houdini/agent
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/mandate
+    envVars:
+      - key: OPENAI_API_KEY   # set in dashboard (Secret)
+        sync: false
+      - key: AGENT_KEY        # BURNER testnet key only — never your main key
+        sync: false
+      - key: ALLOWED_ORIGIN   # your Vercel URL, e.g. https://houdini.vercel.app
+        sync: false

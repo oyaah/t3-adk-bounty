@@ -1,49 +1,43 @@
-# Deploy Houdini so anyone can attack it
+# Deploy Houdini ($0) — Vercel + Render free
 
-Two pieces: the **agent backend** (LLM brain + Terminal 3 TEE) on **Railway**, and the **static frontend** on **Vercel**.
+Frontend (static) → **Vercel (Hobby, free)**. Backend (agent + TEE) → **Render free web service**.
+Total cost: $0. (Render free sleeps after ~15 min idle; first hit cold-starts ~30–60s.)
 
-## 1. Backend → Railway
+## 1. Backend → Render (free)
 
-The backend (`houdini/agent`) exposes `POST /api/attack` and `GET /api/mandate`. In live mode it calls the already-registered Houdini contract (`contract_id 19`) in the Terminal 3 TEE.
+The repo has [`houdini/agent/render.yaml`](agent/render.yaml) (a Render Blueprint).
 
-```bash
-cd houdini/agent
-# Option A: Railway CLI
-railway init            # or: railway link  (to an existing project)
-railway up              # uses the Dockerfile
-# Option B: Railway dashboard → New Project → Deploy from GitHub repo,
-#           root directory = houdini/agent
-```
+1. Render dashboard → **New → Blueprint** → connect this GitHub repo. It picks up `render.yaml` (service `houdini-agent`, Docker, **plan: free**).
+2. Set these as **Secret** env vars (Service → Environment):
+   - `AGENT_KEY` — a **dedicated BURNER Terminal 3 testnet key** (Ethereum private key). **Never your main key.** If Render leaks it, blast radius ≈ 0. Without it the backend runs the local enclave-faithful guard.
+   - `OPENAI_API_KEY` — the LLM brain. Without it a fast heuristic planner is used (still trickable, still blocked).
+   - `ALLOWED_ORIGIN` — your Vercel URL (e.g. `https://houdini.vercel.app`); locks CORS. Comma-separate for multiple.
+   - `RATE_LIMIT_PER_MIN` — optional (default 12). Per-IP cap on `/api/attack`.
+3. Deploy → copy the URL, e.g. `https://houdini-agent.onrender.com`.
 
-**Set these env vars in Railway** (Service → Variables):
-- `OPENAI_API_KEY` — the agent's LLM brain (without it, a fast heuristic planner is used).
-- `AGENT_KEY` — your Terminal 3 developer key (the `0x…` Ed25519/eth key). Enables **live TEE** mode. Without it the backend uses the local enclave-faithful guard (needs the `eval` binary; live mode does not).
-- `PORT` — Railway sets this automatically; the server reads it.
+> Secrets live only in Render's encrypted env — never in the repo (`.env` is gitignored). For rotation, point them at Doppler/Infisical later.
 
-Copy the resulting URL, e.g. `https://houdini-agent.up.railway.app`.
-
-> Security: the keys live only in Railway's env. They are never in the repo (`.env` is gitignored).
-
-## 2. Frontend → Vercel
+## 2. Frontend → Vercel (free)
 
 ```bash
 cd houdini/web
-# Set the backend URL the UI calls:
-#   edit config.js -> window.HOUDINI_API = "https://houdini-agent.up.railway.app"
-vercel            # or: import the repo in the Vercel dashboard, root = houdini/web
+# point the UI at your Render backend:
+#   edit config.js -> window.HOUDINI_API = "https://houdini-agent.onrender.com"
+vercel            # or import the repo in the Vercel dashboard, root = houdini/web
 ```
 
-Vercel serves `houdini/web/` as a static site. The page calls the Railway backend via `window.HOUDINI_API` (set in `config.js`). Enable CORS is already handled by the backend (`cors()`).
+Then set `ALLOWED_ORIGIN` on Render to the Vercel URL so CORS matches.
 
-## 3. Try it
-
-Open the Vercel URL. Type any instruction — legit or a jailbreak — and watch the LLM's proposal hit the enclave: ALLOW (green) or BLOCKED (red, with the enforced reason).
+## Security posture (already wired)
+- **Per-IP rate limit** on `/api/attack` (`express-rate-limit`, default 12/min) — caps spam / OpenAI cost / T3 load.
+- **CORS locked** to `ALLOWED_ORIGIN` in prod (open only when unset, for local dev).
+- **Burner key** for `AGENT_KEY` (minimal/zero funds) — the real safeguard.
+- JSON body capped at 8kb; instruction capped at 500 chars; small `max_tokens`.
 
 ## Run locally (no hosting)
-
 ```bash
 cd houdini/agent
 cp .env.example .env     # add OPENAI_API_KEY (+ AGENT_KEY for live TEE)
 cargo build --release --bin eval --manifest-path ../contract/Cargo.toml
-npx tsx src/server.ts    # http://localhost:8787 (frontend served at /)
+npm start                # http://localhost:8787
 ```

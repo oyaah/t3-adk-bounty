@@ -86,8 +86,8 @@ Without `AGENT_KEY` the agent runs against the local enclave-faithful guard; wit
 
 ## Deploy
 
-Frontend (static) → **Vercel**; backend (agent + TEE) → **Railway**. See [`houdini/DEPLOY.md`](houdini/DEPLOY.md).
-After deploying the backend, set `window.HOUDINI_API` in `houdini/web/config.js` to the Railway URL and deploy `houdini/web/` to Vercel.
+**$0 stack:** frontend → **Vercel** (free); backend (agent + TEE) → **Render** free web service. See [`houdini/DEPLOY.md`](houdini/DEPLOY.md).
+After deploying the backend, set `window.HOUDINI_API` in `houdini/web/config.js` to the Render URL and deploy `houdini/web/` to Vercel. Hardened out of the box: per-IP rate limiting, CORS locked to your origin, burner testnet key.
 
 ---
 
