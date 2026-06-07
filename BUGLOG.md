@@ -11,29 +11,42 @@
 - ✅ `@terminal3/t3n-sdk@3.5.0` installed; exports inspected from `dist/index.d.ts`.
 - ⏳ Live invocation against testnet pending valid key (runtime section D).
 
+## ⚠️ Independent re-verification (2026-06-07, against CURRENT live docs)
+Every claim was re-checked against the live `docs.terminal3.io/*.md` pages, the shipped SDK, and the sample source on the submission day.
+
+- **28 of 34 bugs still reproduce** against the current live docs/SDK/sample.
+- **6 bugs were already FIXED in the live docs** between original discovery and re-check — they no longer reproduce and are flagged `❌ FIXED-IN-DOCS` below: **BUG-01, BUG-02, BUG-08, BUG-11, BUG-12, BUG-13.** They are retained for transparency, NOT submitted as active findings. (Note: `verify.mjs` still passes 10/10 because it only asserts the SDK's real *shape* — it cannot see that the docs were corrected to match it.)
+- **2 bugs reframed** for accuracy (`🟡` below): **BUG-07** (conflates map key vs map tail) and **BUG-16** (rows exist; the table simply has no fix column).
+- **Surviving headline criticals: BUG-03 and BUG-04** (both confirmed against live `write-contract` / walkthrough today).
+
 ## Summary
 
-| Severity | Count |
-|----------|-------|
-| Critical | 4 |
-| High | 12 |
-| Medium | 11 |
-| Low | 7 |
-| **Total** | **34** |
+| Severity | Documented | Reproduce on current live docs |
+|----------|------------|--------------------------------|
+| Critical | 4 | 2 |
+| High | 12 | 9 |
+| Medium | 11 | 10 |
+| Low | 7 | 7 |
+| **Total** | **34** | **28** |
+
+> 6 originally-valid bugs (BUG-01/02/08/11/12/13) were patched in the live docs before submission day — see re-verification note above.
 
 > Sections A–E verified against shipped code; Section F adds sample-source vs docs contradictions; all 10 SDK-surface bugs are confirmed by a runnable harness (`node verify.mjs` → 10/10). Full command outputs in [PROOF.md](./PROOF.md). A corrected, working onboarding guide is in [FIXED-ONBOARDING.md](./FIXED-ONBOARDING.md).
 
-**Headline findings (proof-grade):**
-1. Docs say *"initialize a `T3nClient` with your API key"* — the shipped `T3nClientConfig` has **no `apiKey` field** (requires `wasmComponent`). The documented auth model is wrong.
-2. Docs call `client.setEnvironment("testnet")` — `setEnvironment` is a **module-level function**, not a client method.
-3. The contract WIT example in the docs uses namespaces/versions (`t3n:host/*@0.1.0`, `export t3n:contract/dispatch`) that **do not exist** in the real host — the real sample uses `host:interfaces/*@2.1.0` and `export contracts`. Code copied from docs cannot load.
-4. The numbered walkthrough (Write→Build→Register→Invoke) **omits the mandatory Create-Maps + Seed-Secrets + host-capability-manifest steps** — onboarding cannot complete by following it.
+**Headline findings (proof-grade, confirmed against current live docs):**
+1. **[BUG-03]** The contract WIT example in the docs uses namespaces/versions (`t3n:host/*@0.1.0`, `export t3n:contract/dispatch@0.1.0`) that **do not exist** in the real host — the real sample uses `host:interfaces/*@2.1.0` and `export contracts`. Code copied from docs cannot load.
+2. **[BUG-04]** The numbered walkthrough (Write→Build→Register→Invoke) **omits the mandatory Create-Maps + Seed-Secrets + host-capability steps** — onboarding cannot complete by following it.
+3. **[BUG-05]** Docs show a `fn dispatch(input: ContractInput) -> Result<ContractOutput, ContractError>` ABI that does not match the real `contracts` interface + `generic-input` envelope — Rust copied from docs won't compile.
+4. **[BUG-26]** Docs HTTP example uses `method: "POST".to_string()`, a `body` field, and reads `resp.body`; the real bindings use a `Verb::Post` enum, a `payload` field, and `resp.payload` — the snippet does not compile.
+
+> NOTE: two earlier headline findings (docs initializing `T3nClient` with an API key, and `client.setEnvironment()`) were **fixed in the live docs before submission** and are no longer reproducible — preserved as BUG-01 / BUG-02 below for transparency.
 
 ---
 
 ## E. Doc-vs-shipped-code contradictions (proof-grade)
 
 ### BUG-01 — [CRITICAL] `T3nClient` does not take an API key
+> ❌ **FIXED-IN-DOCS (2026-06-07):** live `set-up-dev-env` now builds the client as `new T3nClient({ wasmComponent, handlers })` — claim no longer reproduces. Retained for transparency; not an active finding.
 - **Doc:** set-up-dev-env Step 4 — *"Initialize a `T3nClient` with your API key."*
 - **Reality (`dist/index.d.ts` L1244):** `interface T3nClientConfig { baseUrl?; wasmComponent: WasmComponent; transport?; timeout?; headers?; logLevel?; logger?; handlers? }`. **No `apiKey`.** `wasmComponent` is required. Auth happens via Eth-signing handlers (`metamask_sign`)/`createEthAuthInput`, not an API key on the client.
 - **Impact:** First SDK step as documented is impossible; misrepresents the whole auth model.
@@ -41,6 +54,7 @@
 - **Severity:** Critical.
 
 ### BUG-02 — [CRITICAL] `setEnvironment` is module-level, not a client method
+> ❌ **FIXED-IN-DOCS (2026-06-07):** live `set-up-dev-env` now imports and calls `setEnvironment("testnet")` standalone — claim no longer reproduces. Retained for transparency; not an active finding.
 - **Doc:** set-up-dev-env Step 4 — *"call `setEnvironment('testnet')`"* in T3nClient context.
 - **Reality (L2934):** `declare function setEnvironment(env: Environment): void;` — a standalone export. `T3nClient` has no `setEnvironment` method. `client.setEnvironment(...)` → `TypeError: not a function`.
 - **Fix:** `import { setEnvironment } from "@terminal3/t3n-sdk"; setEnvironment("testnet");`
@@ -71,12 +85,14 @@
 - **Severity:** High.
 
 ### BUG-07 — [HIGH] Secret-map naming mechanism contradicts itself
+> 🟡 **REFRAMED (2026-06-07):** the tail-vs-`z:<tid>:` prefixing contradiction is real, but note the *map tail* is `secrets` and `duffel_api_key` is the *key within* that map — the original wording conflated the two. Suggest downgrading to MEDIUM.
 - **Docs:** write-contract — *"KV operations use map tails only; pass `duffel_api_key`, host handles `z:<tid>:` prefixing."*
 - **Sample WIT note:** *"The contract builds the full map name at runtime using `tenant-context.tenant-did()`."* i.e. the contract constructs `z:<tid>:secrets` itself, not auto-prefixed.
 - **Impact:** Contradictory guidance on who prefixes the namespace → wrong key, `map not found`.
 - **Severity:** High.
 
 ### BUG-08 — [MEDIUM] Cargo.toml in docs omits `default-features = false`
+> ❌ **FIXED-IN-DOCS (2026-06-07):** live `write-contract` Cargo.toml now includes `default-features = false` on both `wit-bindgen` and `serde_json` — claim no longer reproduces. Retained for transparency; not an active finding.
 - **Docs:** `wit-bindgen = { version = "0.49", features = ["macros", "realloc"] }`, `serde_json = { version = "1.0", features = ["alloc"] }`.
 - **Sample:** all deps use `default-features = false` (needed for `no_std`/alloc WASM). Docs version pulls std features that can break the `wasm32-wasip2` build.
 - **Severity:** Medium.
@@ -94,16 +110,19 @@
 ## A. Onboarding flow / walkthrough gaps
 
 ### BUG-11 — [HIGH] Invoke walkthrough uses helpers with no import
+> ❌ **FIXED-IN-DOCS (2026-06-07):** live `invoke-contract` now shows an explicit `import { … getScriptVersion, getNodeUrl, createEthAuthInput, metamask_sign } from "@terminal3/t3n-sdk"` — claim no longer reproduces. Retained for transparency; not an active finding.
 - **Page:** invoke-contract. Uses `getNodeUrl()`, `getScriptVersion()`, `createEthAuthInput()`, `metamask_sign()`.
 - **Reality:** all four ARE real exports (L2948/2768/332/2047) — but the example never shows the `import { ... } from "@terminal3/t3n-sdk"` line, so copy-paste → `ReferenceError`.
 - **Fix:** add the import statement.
 - **Severity:** High.
 
 ### BUG-12 — [HIGH] `authenticate()` requires an argument the setup omits
+> ❌ **FIXED-IN-DOCS (2026-06-07):** live `set-up-dev-env` now shows `await t3n.authenticate(createEthAuthInput(address))` — claim no longer reproduces. Retained for transparency; not an active finding.
 - **Reality (L1539):** `authenticate(authInput: AuthInput): Promise<Did>`. set-up-dev-env prose implies a bare `authenticate()`. Must pass `createEthAuthInput(address)`.
 - **Severity:** High.
 
 ### BUG-13 — [HIGH] `loadWasmComponent` flow missing from setup
+> ❌ **FIXED-IN-DOCS (2026-06-07):** live `set-up-dev-env` now imports `loadWasmComponent` and uses `const wasmComponent = await loadWasmComponent()` wired into the constructor — claim no longer reproduces. Retained for transparency; not an active finding.
 - **Reality (L249):** `loadWasmComponent(config?): Promise<WasmComponent>` is module-level and its result is **required** by `new T3nClient({ wasmComponent })`. Setup says only "load the WASM component" with no name, no import, no wiring into the constructor.
 - **Severity:** High.
 
@@ -120,6 +139,7 @@
 ## B. Documentation gaps in examples
 
 ### BUG-16 — [HIGH] Two documented errors have no fix
+> 🟡 **REFRAMED (2026-06-07):** `email_not_verified` and `user_not_found` do appear, but the Authentication table has only Code + When columns — there is no fix column to be "blank". More accurate framing: "the errors table provides no resolution guidance." Suggest downgrading to MEDIUM.
 - **Page:** common-errors — `email_not_verified` and `user_not_found` rows have blank resolutions ("fix missing").
 - **Severity:** High.
 
